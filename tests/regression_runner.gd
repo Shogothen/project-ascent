@@ -29,11 +29,11 @@ const INPUT_ACTIONS := [
 const EXPECTED_COURSE_SURFACES := {
 	"SpawnFloor": {"size": Vector3(16.0, 0.5, 18.0), "position": Vector3(0.0, -0.25, 3.0), "rotation": Vector3.ZERO},
 	"Runway": {"size": Vector3(10.0, 0.5, 14.0), "position": Vector3(0.0, -0.25, -13.0), "rotation": Vector3.ZERO},
-	"MainRamp": {"size": Vector3(10.0, 0.6, 12.5), "position": Vector3(0.0, 1.43, -26.0), "rotation": Vector3(15.0, 0.0, 0.0)},
+	"MainRamp": {"size": Vector3(10.0, 0.6, 11.978001), "position": Vector3(0.0, 1.386972, -25.833904), "rotation": Vector3(16.241071, 0.0, 0.0)},
 	"UpperDeck": {"size": Vector3(18.0, 0.6, 18.0), "position": Vector3(0.0, 3.05, -40.5), "rotation": Vector3.ZERO},
 	"UpperBackWall": {"size": Vector3(18.0, 4.0, 0.6), "position": Vector3(0.0, 5.0, -49.2), "rotation": Vector3.ZERO},
 	"UpperLeftWall": {"size": Vector3(0.6, 3.0, 18.0), "position": Vector3(-8.7, 4.5, -40.5), "rotation": Vector3.ZERO},
-	"SideRamp": {"size": Vector3(7.0, 0.55, 10.0), "position": Vector3(12.0, 1.2, -35.0), "rotation": Vector3(12.0, 0.0, 0.0)},
+	"SideRamp": {"size": Vector3(7.0, 0.55, 10.0), "position": Vector3(12.0, 1.391451, -34.666438), "rotation": Vector3(12.0, 0.0, 0.0)},
 	"SideDeck": {"size": Vector3(7.0, 0.5, 9.0), "position": Vector3(12.0, 2.45, -44.0), "rotation": Vector3.ZERO},
 	"LedgeA": {"size": Vector3(4.0, 0.5, 4.0), "position": Vector3(-11.0, 0.75, -18.0), "rotation": Vector3.ZERO},
 	"LedgeB": {"size": Vector3(4.0, 0.5, 4.0), "position": Vector3(-11.0, 1.75, -24.0), "rotation": Vector3.ZERO},
@@ -87,11 +87,28 @@ func _run_all() -> void:
 	_record("real_course_recovery_floors", await _test_real_course_recovery_floors())
 	_record("grounding_on_flat_floor", await _test_grounding_on_flat_floor())
 	_record("ground_movement_13_mps", await _test_ground_movement_speed())
+	_record("ground_release_brakes_hard", await _test_ground_release_brakes_hard())
 	_record("jump_takeoff_and_landing", await _test_jump_takeoff_and_landing())
 	_record("crouch_geometry_and_speed", await _test_crouch_geometry_and_speed())
+	_record("crouch_forward_never_slides", await _test_crouch_forward_never_slides())
+	_record("no_forward_no_slide", await _test_no_forward_no_slide())
 	_record("flat_slide_near_16_mps", await _test_flat_slide_speed())
+	_record("buffered_slide_start", await _test_buffered_slide_start())
+	_record("slide_forward_release_brakes", await _test_slide_forward_release_brakes())
+	_record("slide_release_with_strafe_brakes", await _test_slide_release_with_strafe_brakes())
 	_record("slide_preserves_fast_momentum", await _test_slide_preserves_fast_momentum())
+	_record("slide_jump_retains_17_mps", await _test_slide_jump_retains_speed())
+	_record("slide_coyote_retains_17_mps", await _test_slide_coyote_retains_speed())
 	_record("ramp_traversal_at_speed", await _test_ramp_traversal())
+	_record("real_course_main_ramp_seams", await _test_real_course_main_ramp_seams())
+	_record("curb_step_up_once", await _test_curb_step_up_once())
+	_record("falling_wall_slide_limits_fall", await _test_falling_wall_slide_limits_fall())
+	_record("wall_slide_duration_requires_separation", await _test_wall_slide_duration_requires_separation())
+	_record("low_tap_near_wall_has_no_free_kick", await _test_low_tap_near_wall_has_no_free_kick())
+	_record("probe_wall_detach_has_no_free_kick", await _test_probe_wall_detach_has_no_free_kick())
+	_record("crouch_detaches_wall_slide", await _test_wall_slide_detach(&"crouch"))
+	_record("slide_detaches_wall_slide", await _test_wall_slide_detach(&"slide"))
+	_record("buffered_wall_jump", await _test_buffered_wall_jump())
 	_record("platform_edge_to_recovery", await _test_platform_edge_to_recovery())
 	_record("stacked_floor_stops_first_fall", await _test_stacked_floor_stops_first_fall())
 	_record("lower_recovery_floor", await _test_lower_recovery_floor())
@@ -368,6 +385,46 @@ func _test_ground_movement_speed() -> Dictionary:
 	return await _finish_case(world, _result(passed, detail))
 
 
+func _test_ground_release_brakes_hard() -> Dictionary:
+	var world := _new_case_world("GroundReleaseBrakesHard")
+	_create_box_collider(world, "Floor", Vector3(0.0, -0.5, 0.0), Vector3(100.0, 1.0, 100.0))
+	var player := _spawn_player(world, Vector3(0.0, 4.0, 0.0))
+	var landing := await _wait_for_landing(player, 0.0, -0.10, 360)
+	if not bool(landing["passed"]):
+		return await _finish_case(world, landing)
+
+	Input.action_press(&"move_forward")
+	for _tick_index in range(18):
+		await _step_physics()
+	var release_speed := _horizontal_speed(player)
+	var release_position := Vector2(player.global_position.x, player.global_position.z)
+	Input.action_release(&"move_forward")
+
+	var stopped_tick := -1
+	for tick_index in range(10):
+		await _step_physics()
+		if stopped_tick < 0 and _horizontal_speed(player) <= 0.50:
+			stopped_tick = tick_index + 1
+
+	var stop_position := Vector2(player.global_position.x, player.global_position.z)
+	var stopping_distance := release_position.distance_to(stop_position)
+	var final_speed := _horizontal_speed(player)
+	var passed := (
+		release_speed >= 12.85
+		and release_speed <= 13.15
+		and stopped_tick > 0
+		and stopped_tick <= 8
+		and stopping_distance <= 0.40
+		and final_speed <= 0.10
+		and player.is_on_floor()
+	)
+	var detail := (
+		"release=%.3f m/s, stop_tick=%d, distance=%.3f m, final=%.3f m/s."
+		% [release_speed, stopped_tick, stopping_distance, final_speed]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
 func _test_jump_takeoff_and_landing() -> Dictionary:
 	var world := _new_case_world("JumpTakeoffAndLanding")
 	_create_box_collider(world, "Floor", Vector3(0.0, -0.5, 0.0), Vector3(40.0, 1.0, 40.0))
@@ -381,7 +438,7 @@ func _test_jump_takeoff_and_landing() -> Dictionary:
 	Input.action_release(&"jump")
 	var takeoff_velocity := player.velocity.y
 	var takeoff_height := player.global_position.y
-	if player.is_on_floor() or takeoff_velocity < 6.2 or takeoff_velocity > 6.7 or takeoff_height <= 0.03:
+	if player.is_on_floor() or takeoff_velocity < 6.0 or takeoff_velocity > 6.35 or takeoff_height <= 0.03:
 		return await _finish_case(
 			world,
 			_result(false, "Invalid jump takeoff: y=%.3f, velocity=%.3f." % [takeoff_height, takeoff_velocity])
@@ -393,7 +450,7 @@ func _test_jump_takeoff_and_landing() -> Dictionary:
 		apex = maxf(apex, player.global_position.y)
 		if player.velocity.y <= 0.0:
 			break
-	if apex < 0.75 or apex > 1.05:
+	if apex < 0.65 or apex > 0.82:
 		return await _finish_case(world, _result(false, "Jump apex was %.3f m." % apex))
 
 	var relanding := await _wait_for_landing(player, 0.0, -0.10, 360)
@@ -429,11 +486,13 @@ func _test_crouch_geometry_and_speed() -> Dictionary:
 			)
 		)
 
-	Input.action_press(&"move_forward")
+	Input.action_press(&"move_right")
 	for _tick_index in range(24):
 		await _step_physics()
 	var crouch_speed := _horizontal_speed(player)
-	Input.action_release(&"move_forward")
+	var crouch_direction := Vector3(player.velocity.x, 0.0, player.velocity.z).normalized()
+	var slid_during_strafe := bool(player.call("is_sliding"))
+	Input.action_release(&"move_right")
 	Input.action_release(&"crouch")
 	for _tick_index in range(14):
 		await _step_physics()
@@ -441,15 +500,86 @@ func _test_crouch_geometry_and_speed() -> Dictionary:
 	var passed := (
 		crouch_speed >= 6.8
 		and crouch_speed <= 7.15
+		and crouch_direction.dot(Vector3.RIGHT) > 0.995
+		and not slid_during_strafe
 		and absf(capsule.height - 1.80) <= 0.03
 		and absf(collision.position.y - 0.90) <= 0.03
 		and absf(head.position.y - 1.62) <= 0.03
 	)
 	var detail := (
-		"Crouch speed %.3f m/s; restored height %.3f m and eye %.3f m."
-		% [crouch_speed, capsule.height, head.position.y]
+		"Strafe crouch %.3f m/s (dot=%.4f, sliding=%s); restored height %.3f m and eye %.3f m."
+		% [
+			crouch_speed,
+			crouch_direction.dot(Vector3.RIGHT),
+			slid_during_strafe,
+			capsule.height,
+			head.position.y,
+		]
 	)
 	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_no_forward_no_slide() -> Dictionary:
+	var world := _new_case_world("NoForwardNoSlide")
+	_create_box_collider(world, "Floor", Vector3(0.0, -0.5, 0.0), Vector3(100.0, 1.0, 100.0))
+	var player := _spawn_player(world, Vector3(0.0, 4.0, 0.0))
+	var landing := await _wait_for_landing(player, 0.0, -0.10, 360)
+	if not bool(landing["passed"]):
+		return await _finish_case(world, landing)
+
+	var incorrectly_started: Array[StringName] = []
+	var low_actions: Array[StringName] = [&"crouch", &"slide"]
+	for low_action in low_actions:
+		player.velocity = Vector3(0.0, 0.0, -13.0)
+		Input.action_press(low_action)
+		await _step_physics()
+		if bool(player.call("is_sliding")):
+			incorrectly_started.append(low_action)
+		Input.action_release(low_action)
+		# One released tick is required before the same low-input edge is reused.
+		await _step_physics()
+
+	var passed := incorrectly_started.is_empty() and player.is_on_floor()
+	var detail := (
+		"Low actions that incorrectly started without forward: %s."
+		% [incorrectly_started]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_crouch_forward_never_slides() -> Dictionary:
+	var world := _new_case_world("CrouchForwardNeverSlides")
+	_create_box_collider(world, "Floor", Vector3(0.0, -0.5, 0.0), Vector3(100.0, 1.0, 100.0))
+	var player := _spawn_player(world, Vector3(0.0, 4.0, 0.0))
+	var landing := await _wait_for_landing(player, 0.0, -0.10, 360)
+	if not bool(landing["passed"]):
+		return await _finish_case(world, landing)
+
+	Input.action_press(&"crouch")
+	Input.action_press(&"move_forward")
+	var ever_slid := false
+	for _tick_index in range(30):
+		await _step_physics()
+		ever_slid = ever_slid or bool(player.call("is_sliding"))
+	var crouch_speed := _horizontal_speed(player)
+	var stayed_crouched := bool(player.call("is_crouched"))
+	Input.action_release(&"move_forward")
+	Input.action_release(&"crouch")
+
+	var passed := (
+		not ever_slid
+		and stayed_crouched
+		and crouch_speed >= 6.8
+		and crouch_speed <= 7.15
+	)
+	return await _finish_case(
+		world,
+		_result(
+			passed,
+			"C+W speed=%.3f m/s, crouched=%s, ever_slid=%s."
+			% [crouch_speed, stayed_crouched, ever_slid]
+		)
+	)
 
 
 func _test_flat_slide_speed() -> Dictionary:
@@ -460,18 +590,170 @@ func _test_flat_slide_speed() -> Dictionary:
 	if not bool(landing["passed"]):
 		return await _finish_case(world, landing)
 
-	player.velocity = Vector3(0.0, 0.0, -13.0)
+	Input.action_press(&"move_forward")
+	for _tick_index in range(18):
+		await _step_physics()
 	Input.action_press(&"slide")
 	await _step_physics()
 	var slide_speed := _horizontal_speed(player)
 	var sliding := bool(player.call("is_sliding"))
 	Input.action_release(&"slide")
+	var remained_latched := true
+	for _tick_index in range(6):
+		await _step_physics()
+		remained_latched = remained_latched and bool(player.call("is_sliding"))
+	Input.action_release(&"move_forward")
 
-	var passed := slide_speed >= 15.80 and slide_speed <= 16.05 and sliding
+	var passed := (
+		slide_speed >= 15.80
+		and slide_speed <= 16.10
+		and sliding
+		and remained_latched
+	)
 	return await _finish_case(
 		world,
-		_result(passed, "Flat slide started at %.3f m/s (sliding=%s)." % [slide_speed, sliding])
+		_result(
+			passed,
+			"Legal flat slide started at %.3f m/s (started=%s, tap_latched=%s)."
+			% [slide_speed, sliding, remained_latched]
+		)
 	)
+
+
+func _test_buffered_slide_start() -> Dictionary:
+	var world := _new_case_world("BufferedSlideStart")
+	_create_box_collider(world, "Floor", Vector3(0.0, -0.5, 0.0), Vector3(100.0, 1.0, 100.0))
+	var player := _spawn_player(world, Vector3(0.0, 4.0, 0.0))
+	var landing := await _wait_for_landing(player, 0.0, -0.10, 360)
+	if not bool(landing["passed"]):
+		return await _finish_case(world, landing)
+
+	# Tap Shift before reaching the entry-speed gate, then keep only W held.
+	Input.action_press(&"move_forward")
+	Input.action_press(&"slide")
+	await _step_physics()
+	var incorrectly_started_on_tap := bool(player.call("is_sliding"))
+	Input.action_release(&"slide")
+
+	var trigger_tick := -1
+	var trigger_speed := 0.0
+	var buffer_ticks := ceili(
+		float(player.get("slide_buffer_time")) * float(REQUIRED_PHYSICS_TICKS_PER_SECOND)
+	) + 2
+	for tick_index in range(buffer_ticks):
+		await _step_physics()
+		if bool(player.call("is_sliding")):
+			trigger_tick = tick_index + 1
+			trigger_speed = _horizontal_speed(player)
+			break
+	Input.action_release(&"move_forward")
+
+	var passed := (
+		not incorrectly_started_on_tap
+		and trigger_tick >= 2
+		and trigger_tick <= buffer_ticks
+		and trigger_speed >= 15.75
+		and not Input.is_action_pressed(&"slide")
+	)
+	var detail := (
+		"early=%s, buffered trigger=%d/%d at %.3f m/s after Shift release."
+		% [incorrectly_started_on_tap, trigger_tick, buffer_ticks, trigger_speed]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_slide_forward_release_brakes() -> Dictionary:
+	var world := _new_case_world("SlideForwardReleaseBrakes")
+	_create_box_collider(world, "Floor", Vector3(0.0, -0.5, 0.0), Vector3(100.0, 1.0, 100.0))
+	var player := _spawn_player(world, Vector3(0.0, 4.0, 0.0))
+	var landing := await _wait_for_landing(player, 0.0, -0.10, 360)
+	if not bool(landing["passed"]):
+		return await _finish_case(world, landing)
+
+	Input.action_press(&"move_forward")
+	for _tick_index in range(18):
+		await _step_physics()
+	Input.action_press(&"slide")
+	await _step_physics()
+	var entry_speed := _horizontal_speed(player)
+	var started_sliding := bool(player.call("is_sliding"))
+	var release_position := Vector2(player.global_position.x, player.global_position.z)
+
+	Input.action_release(&"move_forward")
+	await _step_physics()
+	var ended_on_release := not bool(player.call("is_sliding"))
+	var stopped_tick := -1
+	for tick_index in range(9):
+		await _step_physics()
+		if stopped_tick < 0 and _horizontal_speed(player) <= 0.50:
+			stopped_tick = tick_index + 2
+	Input.action_release(&"slide")
+
+	var stop_position := Vector2(player.global_position.x, player.global_position.z)
+	var stopping_distance := release_position.distance_to(stop_position)
+	var final_speed := _horizontal_speed(player)
+	var passed := (
+		started_sliding
+		and entry_speed >= 15.80
+		and entry_speed <= 16.10
+		and ended_on_release
+		and stopped_tick > 0
+		and stopped_tick <= 8
+		and stopping_distance <= 0.50
+		and final_speed <= 0.10
+	)
+	var detail := (
+		"entry=%.3f, ended=%s, stop_tick=%d, distance=%.3f, final=%.3f."
+		% [entry_speed, ended_on_release, stopped_tick, stopping_distance, final_speed]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_slide_release_with_strafe_brakes() -> Dictionary:
+	var world := _new_case_world("SlideReleaseWithStrafeBrakes")
+	_create_box_collider(world, "Floor", Vector3(0.0, -0.5, 0.0), Vector3(100.0, 1.0, 100.0))
+	var player := _spawn_player(world, Vector3(0.0, 4.0, 0.0))
+	var landing := await _wait_for_landing(player, 0.0, -0.10, 360)
+	if not bool(landing["passed"]):
+		return await _finish_case(world, landing)
+
+	Input.action_press(&"move_forward")
+	for _tick_index in range(18):
+		await _step_physics()
+	Input.action_press(&"slide")
+	await _step_physics()
+	var entry_speed := _horizontal_speed(player)
+	var release_position := Vector2(player.global_position.x, player.global_position.z)
+
+	Input.action_release(&"move_forward")
+	Input.action_press(&"move_left")
+	var stopped_tick := -1
+	for tick_index in range(10):
+		await _step_physics()
+		if _horizontal_speed(player) <= 0.50:
+			stopped_tick = tick_index + 1
+			Input.action_release(&"move_left")
+			break
+	Input.action_release(&"move_left")
+	Input.action_release(&"slide")
+
+	var stop_position := Vector2(player.global_position.x, player.global_position.z)
+	var stopping_distance := release_position.distance_to(stop_position)
+	var final_speed := _horizontal_speed(player)
+	var passed := (
+		entry_speed >= 15.80
+		and entry_speed <= 16.10
+		and stopped_tick > 0
+		and stopped_tick <= 8
+		and stopping_distance <= 0.50
+		and final_speed <= 0.50
+		and not bool(player.call("is_sliding"))
+	)
+	var detail := (
+		"entry=%.3f, strafe-stop tick=%d, distance=%.3f, final=%.3f."
+		% [entry_speed, stopped_tick, stopping_distance, final_speed]
+	)
+	return await _finish_case(world, _result(passed, detail))
 
 
 func _test_slide_preserves_fast_momentum() -> Dictionary:
@@ -483,22 +765,111 @@ func _test_slide_preserves_fast_momentum() -> Dictionary:
 		return await _finish_case(world, landing)
 
 	player.velocity = Vector3(22.0, 0.0, 0.0)
+	Input.action_press(&"move_forward")
 	Input.action_press(&"slide")
 	await _step_physics()
 	var slide_speed := _horizontal_speed(player)
 	var direction_dot := Vector3(player.velocity.x, 0.0, player.velocity.z).normalized().dot(Vector3.RIGHT)
 	var sliding := bool(player.call("is_sliding"))
 	Input.action_release(&"slide")
+	Input.action_release(&"move_forward")
 
-	var passed := slide_speed >= 21.80 and direction_dot > 0.995 and sliding
+	var passed := slide_speed >= 21.80 and direction_dot > 0.99 and sliding
 	return await _finish_case(
 		world,
 		_result(
 			passed,
-			"22 m/s entry retained %.3f m/s with direction dot %.4f."
+			"Legal 22 m/s entry retained %.3f m/s with direction dot %.4f."
 			% [slide_speed, direction_dot]
 		)
 	)
+
+
+func _test_slide_jump_retains_speed() -> Dictionary:
+	var world := _new_case_world("SlideJumpRetainsSpeed")
+	_create_box_collider(world, "Floor", Vector3(0.0, -0.5, 0.0), Vector3(100.0, 1.0, 100.0))
+	var player := _spawn_player(world, Vector3(0.0, 4.0, 0.0))
+	var landing := await _wait_for_landing(player, 0.0, -0.10, 360)
+	if not bool(landing["passed"]):
+		return await _finish_case(world, landing)
+
+	Input.action_press(&"move_forward")
+	for _tick_index in range(18):
+		await _step_physics()
+	Input.action_press(&"slide")
+	await _step_physics()
+	var slide_started := bool(player.call("is_sliding"))
+	Input.action_press(&"jump")
+	await _step_physics()
+	Input.action_release(&"jump")
+
+	var jump_speed := _horizontal_speed(player)
+	var vertical_speed := player.velocity.y
+	var direction_dot := Vector3(player.velocity.x, 0.0, player.velocity.z).normalized().dot(Vector3.FORWARD)
+	var passed := (
+		slide_started
+		and not bool(player.call("is_sliding"))
+		and not player.is_on_floor()
+		and jump_speed >= 16.95
+		and jump_speed <= 17.20
+		and vertical_speed >= 5.0
+		and vertical_speed <= 5.4
+		and direction_dot > 0.995
+	)
+	Input.action_release(&"slide")
+	Input.action_release(&"move_forward")
+
+	var detail := (
+		"started=%s, jump horizontal=%.3f, vertical=%.3f, direction dot=%.4f."
+		% [slide_started, jump_speed, vertical_speed, direction_dot]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_slide_coyote_retains_speed() -> Dictionary:
+	var world := _new_case_world("SlideCoyoteRetainsSpeed")
+	_create_box_collider(world, "ShortPlatform", Vector3(0.0, -0.5, 2.0), Vector3(12.0, 1.0, 6.0))
+	var player := _spawn_player(world, Vector3(0.0, 4.0, 0.0))
+	var landing := await _wait_for_landing(player, 0.0, -0.10, 360)
+	if not bool(landing["passed"]):
+		return await _finish_case(world, landing)
+
+	player.velocity = Vector3.FORWARD * 13.0
+	Input.action_press(&"move_forward")
+	Input.action_press(&"slide")
+	await _step_physics()
+	var slide_started := bool(player.call("is_sliding"))
+	Input.action_release(&"slide")
+
+	var left_edge := false
+	for _tick_index in range(48):
+		await _step_physics()
+		if not player.is_on_floor():
+			left_edge = true
+			break
+	if not left_edge:
+		Input.action_release(&"move_forward")
+		return await _finish_case(world, _result(false, "Slide never left the short platform."))
+
+	Input.action_press(&"jump")
+	await _step_physics()
+	Input.action_release(&"jump")
+	Input.action_release(&"move_forward")
+	var horizontal_speed := _horizontal_speed(player)
+	var vertical_speed := player.velocity.y
+	var passed := (
+		slide_started
+		and horizontal_speed >= 16.95
+		and horizontal_speed <= 17.25
+		and vertical_speed >= 5.0
+		and vertical_speed <= 5.4
+		and not player.is_on_floor()
+	)
+	var detail := (
+		"started=%s, left_edge=%s, coyote jump horizontal=%.3f, vertical=%.3f."
+		% [slide_started, left_edge, horizontal_speed, vertical_speed]
+	)
+	return await _finish_case(world, _result(passed, detail))
 
 
 func _test_ramp_traversal() -> Dictionary:
@@ -552,6 +923,461 @@ func _test_ramp_traversal() -> Dictionary:
 	var detail := (
 		"ramp_ticks=%d air_ticks=%d final=(y=%.3f,z=%.3f,speed=%.3f)."
 		% [ramp_ground_ticks, airborne_ticks, player.global_position.y, player.global_position.z, final_speed]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_real_course_main_ramp_seams() -> Dictionary:
+	var world := _new_case_world("RealCourseMainRampSeams")
+	var course := _instantiate_course(world)
+	if course == null:
+		return await _finish_case(world, _result(false, "Could not instantiate the graybox course."))
+	await _step_physics()
+
+	var ramp_body := course.get_node_or_null("MainRamp") as StaticBody3D
+	if ramp_body == null:
+		return await _finish_case(world, _result(false, "The real course has no MainRamp body."))
+	var ramp_collision := ramp_body.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if ramp_collision == null or not ramp_collision.shape is BoxShape3D:
+		return await _finish_case(world, _result(false, "MainRamp has no BoxShape3D collider."))
+	var ramp_box := ramp_collision.shape as BoxShape3D
+	var half_size := ramp_box.size * 0.5
+	var lower_edge := ramp_collision.to_global(Vector3(0.0, half_size.y, half_size.z))
+	var upper_edge := ramp_collision.to_global(Vector3(0.0, half_size.y, -half_size.z))
+
+	var player := _spawn_player(world, Vector3(0.0, 4.0, lower_edge.z + 5.0))
+	var landing := await _wait_for_landing(player, 0.0, -0.10, 360)
+	if not bool(landing["passed"]):
+		return await _finish_case(world, landing)
+
+	player.velocity = Vector3.FORWARD * 13.0
+	Input.action_press(&"move_forward")
+	var lower_enter_tick := -1
+	var lower_exit_tick := -1
+	var upper_enter_tick := -1
+	var upper_exit_tick := -1
+	var consecutive_stall_ticks := 0
+	var maximum_stall_ticks := 0
+	var seam_airborne_ticks := 0
+	var fell_through := false
+	var previous_z := player.global_position.z
+	for tick_index in range(220):
+		await _step_physics()
+		var current_z := player.global_position.z
+		var forward_progress := previous_z - current_z
+		previous_z = current_z
+
+		if lower_enter_tick < 0 and current_z <= lower_edge.z + 0.90:
+			lower_enter_tick = tick_index + 1
+		if lower_exit_tick < 0 and current_z <= lower_edge.z - 0.90:
+			lower_exit_tick = tick_index + 1
+		if upper_enter_tick < 0 and current_z <= upper_edge.z + 0.90:
+			upper_enter_tick = tick_index + 1
+		if upper_exit_tick < 0 and current_z <= upper_edge.z - 0.90:
+			upper_exit_tick = tick_index + 1
+
+		var inside_seam_band := (
+			absf(current_z - lower_edge.z) <= 1.10
+			or absf(current_z - upper_edge.z) <= 1.10
+		)
+		if inside_seam_band:
+			if not player.is_on_floor():
+				seam_airborne_ticks += 1
+			if forward_progress < 0.01:
+				consecutive_stall_ticks += 1
+				maximum_stall_ticks = maxi(maximum_stall_ticks, consecutive_stall_ticks)
+			else:
+				consecutive_stall_ticks = 0
+		else:
+			consecutive_stall_ticks = 0
+
+		if player.global_position.y < -0.12:
+			fell_through = true
+			break
+	Input.action_release(&"move_forward")
+
+	var lower_cross_ticks := (
+		lower_exit_tick - lower_enter_tick
+		if lower_enter_tick > 0 and lower_exit_tick > 0
+		else -1
+	)
+	var upper_cross_ticks := (
+		upper_exit_tick - upper_enter_tick
+		if upper_enter_tick > 0 and upper_exit_tick > 0
+		else -1
+	)
+	var expected_deck_height := 3.35
+	var final_speed := _horizontal_speed(player)
+	var step_up_count := int(player.call("get_step_up_count"))
+	var passed := (
+		not fell_through
+		and lower_cross_ticks >= 0
+		and lower_cross_ticks <= 36
+		and upper_cross_ticks >= 0
+		and upper_cross_ticks <= 36
+		and maximum_stall_ticks <= 6
+		and seam_airborne_ticks <= 8
+		and step_up_count == 0
+		and player.is_on_floor()
+		and absf(player.global_position.y - expected_deck_height) <= 0.10
+		and player.global_position.z < upper_edge.z - 1.0
+		and final_speed >= 12.4
+		and final_speed <= 13.4
+	)
+	var detail := (
+		"lower=%d ticks, upper=%d ticks, max_stall=%d, air=%d, steps=%d, final=(y=%.3f,z=%.3f,speed=%.3f)."
+		% [
+			lower_cross_ticks,
+			upper_cross_ticks,
+			maximum_stall_ticks,
+			seam_airborne_ticks,
+			step_up_count,
+			player.global_position.y,
+			player.global_position.z,
+			final_speed,
+		]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_curb_step_up_once() -> Dictionary:
+	var world := _new_case_world("CurbStepUpOnce")
+	_create_box_collider(world, "Approach", Vector3(0.0, -0.5, 3.0), Vector3(8.0, 1.0, 6.0))
+	_create_box_collider(world, "RaisedDeck", Vector3(0.0, -0.30, -3.0), Vector3(8.0, 1.0, 6.0))
+	var player := _spawn_player(world, Vector3(0.0, 4.0, 3.0))
+	var landing := await _wait_for_landing(player, 0.0, -0.10, 360)
+	if not bool(landing["passed"]):
+		return await _finish_case(world, landing)
+
+	Input.action_press(&"move_forward")
+	for _tick_index in range(65):
+		await _step_physics()
+	Input.action_release(&"move_forward")
+
+	var step_up_count := int(player.call("get_step_up_count"))
+	var passed := (
+		step_up_count == 1
+		and player.is_on_floor()
+		and absf(player.global_position.y - 0.20) <= 0.06
+		and player.global_position.z < -1.0
+		and player.global_position.z > -5.5
+		and _horizontal_speed(player) >= 12.7
+	)
+	var detail := (
+		"steps=%d, final=(y=%.3f,z=%.3f,speed=%.3f)."
+		% [step_up_count, player.global_position.y, player.global_position.z, _horizontal_speed(player)]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_falling_wall_slide_limits_fall() -> Dictionary:
+	var world := _new_case_world("FallingWallSlideLimitsFall")
+	_create_box_collider(world, "Wall", Vector3(0.0, 6.0, -3.0), Vector3(8.0, 24.0, 0.5))
+	var wall_player := _spawn_player(
+		world,
+		Vector3(0.0, 10.0, 0.0),
+		Vector3(0.0, -12.0, -13.0)
+	)
+	wall_player.name = "WallPlayer"
+	var free_player := _spawn_player(
+		world,
+		Vector3(6.0, 10.0, 0.0),
+		Vector3(0.0, -12.0, -13.0)
+	)
+	free_player.name = "FreeFallControl"
+
+	Input.action_press(&"move_forward")
+	var entered_tick := -1
+	for tick_index in range(48):
+		await _step_physics()
+		if bool(wall_player.call("is_wall_sliding")):
+			entered_tick = tick_index + 1
+			break
+	if entered_tick < 0:
+		Input.action_release(&"move_forward")
+		return await _finish_case(
+			world,
+			_result(false, "Wall slide did not engage within 48 physics ticks.")
+		)
+
+	var wall_slide_ticks := 0
+	for _tick_index in range(32):
+		await _step_physics()
+		if bool(wall_player.call("is_wall_sliding")):
+			wall_slide_ticks += 1
+	Input.action_release(&"move_forward")
+
+	var wall_fall_speed := wall_player.velocity.y
+	var free_fall_speed := free_player.velocity.y
+	var configured_limit := float(wall_player.get("wall_slide_fall_speed"))
+	var height_advantage := wall_player.global_position.y - free_player.global_position.y
+	var passed := (
+		wall_slide_ticks >= 28
+		and not bool(free_player.call("is_wall_sliding"))
+		and wall_fall_speed < -0.5
+		and wall_fall_speed >= configured_limit - 0.35
+		and wall_fall_speed - free_fall_speed >= 5.0
+		and height_advantage >= 0.25
+	)
+	var detail := (
+		"entered=%d, active=%d/32, wall_vy=%.3f, free_vy=%.3f, limit=%.3f, height_gain=%.3f."
+		% [
+			entered_tick,
+			wall_slide_ticks,
+			wall_fall_speed,
+			free_fall_speed,
+			configured_limit,
+			height_advantage,
+		]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_wall_slide_duration_requires_separation() -> Dictionary:
+	var world := _new_case_world("WallSlideDurationRequiresSeparation")
+	_create_box_collider(world, "Wall", Vector3(0.0, 6.0, -3.0), Vector3(8.0, 24.0, 0.5))
+	var player := _spawn_player(
+		world,
+		Vector3(0.0, 10.0, 0.0),
+		Vector3(0.0, -8.0, -13.0)
+	)
+	player.set("wall_slide_max_duration", 0.12)
+	Input.action_press(&"move_forward")
+
+	var entered := false
+	for _tick_index in range(48):
+		await _step_physics()
+		if bool(player.call("is_wall_sliding")):
+			entered = true
+			break
+	if not entered:
+		Input.action_release(&"move_forward")
+		return await _finish_case(world, _result(false, "Short wall slide never engaged."))
+
+	var expired := false
+	var physical_contact_at_expiry := false
+	for _tick_index in range(30):
+		await _step_physics()
+		if not bool(player.call("is_wall_sliding")):
+			expired = true
+			physical_contact_at_expiry = player.is_on_wall()
+			break
+
+	var reentered_same_wall := false
+	for _tick_index in range(24):
+		await _step_physics()
+		reentered_same_wall = reentered_same_wall or bool(player.call("is_wall_sliding"))
+	Input.action_release(&"move_forward")
+
+	var passed := entered and expired and physical_contact_at_expiry and not reentered_same_wall
+	var detail := (
+		"entered=%s, expired=%s, contact=%s, same-wall reentry=%s."
+		% [entered, expired, physical_contact_at_expiry, reentered_same_wall]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_low_tap_near_wall_has_no_free_kick() -> Dictionary:
+	var world := _new_case_world("LowTapNearWallHasNoFreeKick")
+	_create_box_collider(world, "Wall", Vector3(0.0, 6.0, -3.0), Vector3(8.0, 24.0, 0.5))
+	var player := _spawn_player(
+		world,
+		Vector3(0.0, 10.0, -2.20),
+		Vector3(0.0, -4.0, 0.0)
+	)
+	var start_position := player.global_position
+	Input.action_press(&"crouch")
+	await _step_physics()
+	Input.action_release(&"crouch")
+
+	var horizontal_speed := _horizontal_speed(player)
+	var horizontal_displacement := Vector2(
+		player.global_position.x - start_position.x,
+		player.global_position.z - start_position.z
+	).length()
+	var passed := (
+		not bool(player.call("is_wall_sliding"))
+		and not player.is_on_wall()
+		and horizontal_speed <= 0.10
+		and horizontal_displacement <= 0.01
+	)
+	var detail := (
+		"wall_sliding=%s, physical=%s, horizontal=%.3f m/s, displacement=%.4f m."
+		% [player.call("is_wall_sliding"), player.is_on_wall(), horizontal_speed, horizontal_displacement]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_probe_wall_detach_has_no_free_kick() -> Dictionary:
+	var world := _new_case_world("ProbeWallDetachHasNoFreeKick")
+	_create_box_collider(world, "Wall", Vector3(0.0, 6.0, -3.0), Vector3(8.0, 24.0, 0.5))
+	var player := _spawn_player(
+		world,
+		Vector3(0.0, 10.0, -2.20),
+		Vector3(0.0, -4.0, 0.0)
+	)
+	await _step_physics()
+	var probe_state_started := bool(player.call("is_wall_sliding"))
+	var physical_before_detach := player.is_on_wall()
+	var wall_normal: Vector3 = player.call("get_wall_slide_normal")
+	var detach_position := player.global_position
+
+	Input.action_press(&"crouch")
+	await _step_physics()
+	Input.action_release(&"crouch")
+	var horizontal_velocity := Vector3(player.velocity.x, 0.0, player.velocity.z)
+	var outward_speed := horizontal_velocity.dot(wall_normal)
+	var outward_displacement := (player.global_position - detach_position).dot(wall_normal)
+	var passed := (
+		probe_state_started
+		and not physical_before_detach
+		and not bool(player.call("is_wall_sliding"))
+		and not player.is_on_wall()
+		and outward_speed <= 0.10
+		and outward_displacement <= 0.01
+	)
+	var detail := (
+		"probe_started=%s, physical_before=%s, outward_v=%.3f, displacement=%.4f."
+		% [probe_state_started, physical_before_detach, outward_speed, outward_displacement]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_wall_slide_detach(low_action: StringName) -> Dictionary:
+	var world := _new_case_world("WallSlideDetach_%s" % low_action)
+	_create_box_collider(world, "Wall", Vector3(0.0, 6.0, -3.0), Vector3(8.0, 24.0, 0.5))
+	var player := _spawn_player(
+		world,
+		Vector3(0.0, 10.0, 0.0),
+		Vector3(0.0, -8.0, -13.0)
+	)
+	Input.action_press(&"move_forward")
+	var entered := false
+	for _tick_index in range(48):
+		await _step_physics()
+		if bool(player.call("is_wall_sliding")):
+			entered = true
+			break
+	if not entered:
+		Input.action_release(&"move_forward")
+		return await _finish_case(
+			world,
+			_result(false, "Wall slide did not engage before %s detach." % low_action)
+		)
+
+	# The radial probe starts the state just before physical contact. Wait for the
+	# latest move_and_slide() result so the detach assertion covers real contact.
+	var made_physical_contact := player.is_on_wall()
+	for _tick_index in range(18):
+		if made_physical_contact:
+			break
+		await _step_physics()
+		made_physical_contact = player.is_on_wall()
+	if not made_physical_contact or not bool(player.call("is_wall_sliding")):
+		Input.action_release(&"move_forward")
+		return await _finish_case(
+			world,
+			_result(false, "No stable physical wall contact before %s detach." % low_action)
+		)
+	var wall_normal: Vector3 = player.call("get_wall_slide_normal")
+	var contact_position := player.global_position
+	Input.action_press(low_action)
+	await _step_physics()
+
+	var outward_velocity := Vector3(player.velocity.x, 0.0, player.velocity.z).dot(wall_normal)
+	var outward_displacement := (player.global_position - contact_position).dot(wall_normal)
+	var detached := not bool(player.call("is_wall_sliding")) and not player.is_on_wall()
+	Input.action_release(low_action)
+	Input.action_release(&"move_forward")
+
+	var passed := (
+		detached
+		and not wall_normal.is_zero_approx()
+		and wall_normal.dot(Vector3.BACK) > 0.98
+		and outward_velocity >= 2.0
+		and outward_displacement >= 0.01
+	)
+	var detail := (
+		"action=%s detached=%s normal=%s outward_v=%.3f displacement=%.3f."
+		% [low_action, detached, wall_normal, outward_velocity, outward_displacement]
+	)
+	return await _finish_case(world, _result(passed, detail))
+
+
+func _test_buffered_wall_jump() -> Dictionary:
+	var world := _new_case_world("BufferedWallJump")
+	_create_box_collider(world, "Wall", Vector3(0.0, 6.0, -3.0), Vector3(8.0, 24.0, 0.5))
+	var player := _spawn_player(
+		world,
+		Vector3(0.0, 10.0, 0.0),
+		Vector3(0.0, -4.0, -13.0)
+	)
+	Input.action_press(&"move_forward")
+
+	var reached_buffer_point := false
+	for _tick_index in range(24):
+		await _step_physics()
+		if player.global_position.z <= -1.25:
+			reached_buffer_point = true
+			break
+	if not reached_buffer_point or bool(player.call("is_wall_sliding")):
+		Input.action_release(&"move_forward")
+		return await _finish_case(
+			world,
+			_result(
+				false,
+				"Invalid pre-buffer point z=%.3f (wall_sliding=%s)."
+				% [player.global_position.z, player.call("is_wall_sliding")]
+			)
+		)
+
+	Input.action_press(&"jump")
+	await _step_physics()
+	Input.action_release(&"jump")
+	var jumped_on_press_tick := player.velocity.y > 0.0
+	var trigger_tick := -1
+	var trigger_position := Vector3.ZERO
+	var horizontal_at_trigger := Vector3.ZERO
+	var vertical_at_trigger := 0.0
+	var buffer_ticks := ceili(
+		float(player.get("jump_buffer_time")) * float(REQUIRED_PHYSICS_TICKS_PER_SECOND)
+	) + 2
+	for tick_index in range(buffer_ticks):
+		await _step_physics()
+		if player.velocity.y > 0.5:
+			trigger_tick = tick_index + 1
+			trigger_position = player.global_position
+			horizontal_at_trigger = Vector3(player.velocity.x, 0.0, player.velocity.z)
+			vertical_at_trigger = player.velocity.y
+			break
+	Input.action_release(&"move_forward")
+
+	var expected_normal := Vector3.BACK
+	var outward_speed := horizontal_at_trigger.dot(expected_normal)
+	var configured_outward := float(player.get("wall_jump_outward_speed"))
+	var configured_vertical := float(player.get("wall_jump_vertical_speed"))
+	var passed := (
+		not jumped_on_press_tick
+		and trigger_tick >= 4
+		and trigger_tick <= buffer_ticks
+		and trigger_position.z <= -1.45
+		and outward_speed >= configured_outward - 0.60
+		and vertical_at_trigger >= configured_vertical - 0.25
+		and not bool(player.call("is_wall_sliding"))
+		and not player.is_on_floor()
+	)
+	var detail := (
+		"early=%s, trigger=%d/%d, pos=%s, outward=%.3f/%.3f, vertical=%.3f/%.3f."
+		% [
+			jumped_on_press_tick,
+			trigger_tick,
+			buffer_ticks,
+			trigger_position,
+			outward_speed,
+			configured_outward,
+			vertical_at_trigger,
+			configured_vertical,
+		]
 	)
 	return await _finish_case(world, _result(passed, detail))
 

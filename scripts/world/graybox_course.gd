@@ -24,15 +24,15 @@ func _build_course() -> void:
 	_add_box("SpawnFloor", Vector3(16.0, 0.5, 18.0), Vector3(0.0, -0.25, 3.0), Vector3.ZERO, FLOOR_COLOR)
 	_add_box("Runway", Vector3(10.0, 0.5, 14.0), Vector3(0.0, -0.25, -13.0), Vector3.ZERO, FLOOR_COLOR)
 
-	# A 15-degree climb into an upper platform. The thick boxes eliminate seams
-	# that can appear with zero-thickness trimesh collision at high velocity.
-	_add_box("MainRamp", Vector3(10.0, 0.6, 12.5), Vector3(0.0, 1.43, -26.0), Vector3(15.0, 0.0, 0.0), RAMP_COLOR)
+	# The top face joins the runway and upper deck exactly. The non-round angle
+	# is intentional: it removes the small vertical lips of the earlier ramp.
+	_add_box("MainRamp", Vector3(10.0, 0.6, 11.978001), Vector3(0.0, 1.386972, -25.833904), Vector3(16.241071, 0.0, 0.0), RAMP_COLOR)
 	_add_box("UpperDeck", Vector3(18.0, 0.6, 18.0), Vector3(0.0, 3.05, -40.5), Vector3.ZERO, FLOOR_COLOR)
 	_add_box("UpperBackWall", Vector3(18.0, 4.0, 0.6), Vector3(0.0, 5.0, -49.2), Vector3.ZERO, WALL_COLOR)
 	_add_box("UpperLeftWall", Vector3(0.6, 3.0, 18.0), Vector3(-8.7, 4.5, -40.5), Vector3.ZERO, WALL_COLOR)
 
 	# A steeper cross-slope and stepped ledges for edge/jump behaviour.
-	_add_box("SideRamp", Vector3(7.0, 0.55, 10.0), Vector3(12.0, 1.2, -35.0), Vector3(12.0, 0.0, 0.0), RAMP_COLOR)
+	_add_box("SideRamp", Vector3(7.0, 0.55, 10.0), Vector3(12.0, 1.391451, -34.666438), Vector3(12.0, 0.0, 0.0), RAMP_COLOR)
 	_add_box("SideDeck", Vector3(7.0, 0.5, 9.0), Vector3(12.0, 2.45, -44.0), Vector3.ZERO, FLOOR_COLOR)
 	_add_box("LedgeA", Vector3(4.0, 0.5, 4.0), Vector3(-11.0, 0.75, -18.0), Vector3.ZERO, LEDGE_COLOR)
 	_add_box("LedgeB", Vector3(4.0, 0.5, 4.0), Vector3(-11.0, 1.75, -24.0), Vector3.ZERO, LEDGE_COLOR)
