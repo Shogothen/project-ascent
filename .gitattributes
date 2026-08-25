@@ -1,0 +1,15 @@
+* text=auto
+
+*.gd text eol=lf
+*.godot text eol=lf
+*.tscn text eol=lf
+*.tres text eol=lf
+*.cfg text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.ps1 text eol=crlf
+
+*.exe binary
+*.pck binary
+*.zip binary

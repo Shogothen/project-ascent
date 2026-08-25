@@ -1,0 +1,137 @@
+name: Validate and export
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_RELEASE: 4.7.2-stable
+  GODOT_BASENAME: Godot_v4.7.2-stable
+  # SHA-512 values from Godot's checked-in 4.7.2 stable release manifest.
+  GODOT_EDITOR_SHA512: 9aa00f7a605200940bce3027a567b782f49bd8e940dd06ae9e987bd65aee1b1467edd56ed84fcdcbdd44354bf613bdbb4e5d2913e925850368e150c59ed54c65
+  GODOT_TEMPLATES_SHA512: ca4d71c4d7b81dfc15d1a98baa07534aa95b03fdda78a0075b06672e1648d2e5f40980c9adc28d23e1b92e732ee7bf3461997aa804af74ec2fcd7a93ccb84079
+  SOURCE_DATE_EPOCH: 1787068601
+
+jobs:
+  validate-test-export:
+    name: Godot 4.7.2 / tests / Windows export
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download pinned Godot editor and export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_url="https://github.com/godotengine/godot-builds/releases/download/${GODOT_RELEASE}"
+          editor_archive="${GODOT_BASENAME}_linux.x86_64.zip"
+          templates_archive="${GODOT_BASENAME}_export_templates.tpz"
+
+          for archive in "${editor_archive}" "${templates_archive}"; do
+            curl --fail --location --silent --show-error \
+              --retry 5 --retry-delay 2 --retry-all-errors \
+              --output "${RUNNER_TEMP}/${archive}" \
+              "${release_url}/${archive}"
+
+            if [[ "${archive}" == "${editor_archive}" ]]; then
+              expected="${GODOT_EDITOR_SHA512}"
+            else
+              expected="${GODOT_TEMPLATES_SHA512}"
+            fi
+            if [[ ! "${expected}" =~ ^[0-9A-Fa-f]{128}$ ]]; then
+              echo "Invalid pinned SHA-512 value for ${archive}." >&2
+              exit 1
+            fi
+
+            actual="$(sha512sum "${RUNNER_TEMP}/${archive}" | awk '{print $1}')"
+            if [[ "${actual,,}" != "${expected,,}" ]]; then
+              echo "SHA-512 verification failed for ${archive}." >&2
+              exit 1
+            fi
+            echo "Verified pinned SHA-512 for ${archive}."
+          done
+
+          godot_dir="${RUNNER_TEMP}/godot"
+          mkdir -p "${godot_dir}"
+          unzip -q "${RUNNER_TEMP}/${editor_archive}" -d "${godot_dir}"
+          godot_bin="${godot_dir}/${GODOT_BASENAME}_linux.x86_64"
+          chmod +x "${godot_bin}"
+
+          template_staging="${RUNNER_TEMP}/export-template-staging"
+          template_root="${HOME}/.local/share/godot/export_templates"
+          template_dir="${template_root}/4.7.2.stable"
+          mkdir -p "${template_staging}" "${template_root}"
+          unzip -q "${RUNNER_TEMP}/${templates_archive}" -d "${template_staging}"
+          test -d "${template_staging}/templates"
+          test ! -e "${template_dir}"
+          mv "${template_staging}/templates" "${template_dir}"
+
+          test -s "${template_dir}/windows_release_x86_64.exe"
+          echo "GODOT_BIN=${godot_bin}" >> "${GITHUB_ENV}"
+
+      - name: Verify exact engine version
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_version="$("${GODOT_BIN}" --version)"
+          echo "Godot ${actual_version}"
+          if [[ "${actual_version}" != 4.7.2.stable* ]]; then
+            echo "Expected Godot 4.7.2.stable, got ${actual_version}." >&2
+            exit 1
+          fi
+
+      - name: Validate project and import resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f project.godot
+          test -f export_presets.cfg
+          test -f tests/regression_runner.tscn
+          timeout 300s "${GODOT_BIN}" --headless --path "${GITHUB_WORKSPACE}" --import
+
+      - name: Run headless movement and collision regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 300s "${GODOT_BIN}" --headless --path "${GITHUB_WORKSPACE}" res://tests/regression_runner.tscn
+
+      - name: Export Windows x86-64 release
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/windows dist
+          "${GODOT_BIN}" --headless --path "${GITHUB_WORKSPACE}" \
+            --export-release "Windows Desktop" \
+            "build/windows/ProjectAscent.exe"
+          test -s build/windows/ProjectAscent.exe
+          touch --date="@${SOURCE_DATE_EPOCH}" build/windows/ProjectAscent.exe
+          zip -j -X -9 dist/ProjectAscent-Windows-x86_64.zip \
+            build/windows/ProjectAscent.exe
+          (
+            cd dist
+            sha256sum ProjectAscent-Windows-x86_64.zip \
+              > ProjectAscent-Windows-x86_64.zip.sha256
+          )
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ProjectAscent-Windows-x86_64
+          path: |
+            dist/ProjectAscent-Windows-x86_64.zip
+            dist/ProjectAscent-Windows-x86_64.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

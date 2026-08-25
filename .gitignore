@@ -1,0 +1,12 @@
+# Godot-generated import/editor state.
+.godot/
+
+# Local builds and test reports; CI publishes packaged builds as artifacts.
+build/
+dist/
+test-results/
+
+# Platform/editor noise.
+.DS_Store
+Thumbs.db
+*.tmp
