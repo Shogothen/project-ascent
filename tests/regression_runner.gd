@@ -639,7 +639,7 @@ func _instantiate_course(parent: Node3D) -> Node3D:
 	var course_script := load(COURSE_SCRIPT_PATH) as Script
 	if course_script == null:
 		return null
-	var instance := course_script.new()
+	var instance: Object = course_script.new()
 	if not instance is Node3D:
 		instance.free()
 		return null
